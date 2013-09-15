@@ -1,4 +1,5 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# LANGUAGE ExistentialQuantification #-}
 module Yesod.Auth.DeskCom
     ( YesodDeskCom(..)
     , deskComCreateCreds
@@ -36,6 +37,8 @@ import qualified Data.Text.Encoding as TE
 import qualified Data.Time as TI
 import Yesod.Auth.DeskCom.Data
 import Database.Persist (Key)
+import Crypto.Hash.CryptoAPI (SHA1)
+import Crypto.Classes (Hash)
 
 -- | Type class that you need to implement in order to support
 -- Desk.com remote authentication.
@@ -111,16 +114,17 @@ deskComCreateCreds site domain apiKey = DeskComCredentials site domain aesKey hm
   where
     -- Yes, I know, Desk.com's crypto is messy.
     aesKey  = AES.initKey . B.take 16 . SHA1.hash . TE.encodeUtf8 $ apiKey <> site
-    hmacKey = HMAC.MacKey $ TE.encodeUtf8 apiKey
+    hmacKey = MacKeyHelper $ HMAC.MacKey $ TE.encodeUtf8 apiKey
 
+data MacKeyHelper d = forall c. Hash c d => MacKeyHelper { unMacKeyHelper :: HMAC.MacKey c d }
 
 -- | Credentials used to access your Desk.com's Multipass.
 data DeskComCredentials =
   DeskComCredentials
     { dccSite    :: !T.Text
     , dccDomain  :: !T.Text
-    , dccAesKey  :: !AES.Key
-    , dccHmacKey :: !(HMAC.MacKey SHA1.Ctx SHA1.SHA1)
+    , dccAesKey  :: !AES.AES
+    , dccHmacKey :: !(MacKeyHelper SHA1)
     }
 
 
@@ -250,7 +254,7 @@ redirectToMultipass uid = do
   -- FIXME Desk.com now actually does have IV support. We should use it... but
   -- I'm tired.
   ivBS <- deskComRandomIV
-  let iv = AES.IV ivBS
+  let iv = ivBS
 
   -- Create Multipass token.
   let toStrict = B.concat . BL.toChunks
@@ -264,8 +268,11 @@ redirectToMultipass uid = do
         . Padding.padPKCS5 16               -- PKCS#5 padding
         . toStrict . A.encode . A.object    -- encode as JSON
       sign
-        = B64.encode . Crypto.encode        -- encode as normal base64 (why??? =[)
-        . HMAC.hmac' dccHmacKey             -- sign using HMAC-SHA1
+        = \bs ->
+            case dccHmacKey of
+                MacKeyHelper key ->
+                    B64.encode . Crypto.encode        -- encode as normal base64 (why??? =[)
+                    . HMAC.hmac' key $ bs -- sign using HMAC-SHA1
       multipass = encrypt $
                     "uid"            A..= userId  :
                     "expires"        A..= expires :

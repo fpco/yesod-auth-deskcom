@@ -47,6 +47,7 @@ Library
                  , yesod-core        == 1.2.*
                  , yesod-auth        == 1.2.*
                  , persistent
+                 , cryptohash-cryptoapi
 
   Exposed-modules: Yesod.Auth.DeskCom
   Other-modules: Yesod.Auth.DeskCom.Data
