@@ -45,7 +45,7 @@ Library
                  , http-conduit
                  , http-types        >= 0.7
                  , yesod-core        == 1.2.*
-                 , yesod-auth        == 1.2.*
+                 , yesod-auth        >= 1.2
                  , persistent
                  , cryptohash-cryptoapi
 
